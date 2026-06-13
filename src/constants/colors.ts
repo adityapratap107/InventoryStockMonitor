@@ -1,0 +1,13 @@
+export const PRIMARY = '#534AB7';
+export const PRIMARY_LIGHT = '#EEEDFE';
+export const SUCCESS_BG = '#EAF3DE';
+export const SUCCESS_TEXT = '#3B6D11';
+export const WARNING_BG = '#FAEEDA';
+export const WARNING_TEXT = '#854F0B';
+export const DANGER_BG = '#FCEBEB';
+export const DANGER_TEXT = '#A32D2D';
+export const BORDER = '#E0DFF5';
+export const TEXT_PRIMARY = '#1A1A2E';
+export const TEXT_SECONDARY = '#6B6B8A';
+export const BACKGROUND = '#F8F7FF';
+export const CARD_BG = '#FFFFFF';
