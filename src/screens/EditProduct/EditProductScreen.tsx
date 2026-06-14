@@ -1,6 +1,8 @@
 // Purpose: Display edit form for a product, identified by its productId parameter.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,73 +17,165 @@ import Input from '../../components/Input';
 import Button from '../../components/Button';
 import Dropdown from '../../components/Dropdown';
 import styles from './styles';
+import { db } from '../../config/firebase';
+import Toast from 'react-native-simple-toast';
+import { deleteProduct, updateProduct } from '../../services/inventoryService';
 
-interface ProductDetails {
+interface Product {
+  id: string;
   name: string;
   sku: string;
   category: string;
-  minLevel: string;
-  stock: number;
   unit: string;
+  currentStock: number;
+  minStockThreshold: number;
+  createdAt: any;
 }
 
-const PRODUCTS_DATA: Record<string, ProductDetails> = {
-  '1': {
-    name: 'Wireless Mouse',
-    sku: 'WM-001',
-    category: 'Electronics',
-    minLevel: '20 pcs',
-    stock: 148,
-    unit: 'pcs'
-  },
-  '2': {
-    name: 'USB-C Cables',
-    sku: 'UC-042',
-    category: 'Electronics',
-    minLevel: '10 pcs',
-    stock: 8,
-    unit: 'pcs'
-  },
-  '3': {
-    name: 'HDMI Adapter',
-    sku: 'HD-017',
-    category: 'Electronics',
-    minLevel: '5 pcs',
-    stock: 0,
-    unit: 'pcs'
-  },
-  '4': {
-    name: 'Notebook A5',
-    sku: 'NB-088',
-    category: 'Stationery',
-    minLevel: '50 pcs',
-    stock: 312,
-    unit: 'pcs'
-  }
-};
+const CATEGORY_OPTIONS = [
+  'Electronics',
+  'Stationery',
+  'Grocery',
+  'Clothing',
+  'Furniture',
+  'Other',
+];
+
+const UNIT_OPTIONS = ['pcs', 'kg', 'litres', 'boxes', 'metres'];
 
 const EditProductScreen = ({ navigation, route }: EditProductScreenProps) => {
-  // Retrieve productId parameter passed from routing, default to '1'
-  const productId = route.params?.productId || '1';
-  const productInfo = PRODUCTS_DATA[productId] || PRODUCTS_DATA['1'];
+  const { productId } = route.params;
+  // Product loading state
+  const [product, setProduct] = useState<Product | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Form states — pre-filled once product loads from Firestore
+  const [productName, setProductName] = useState('');
+  const [sku, setSku] = useState('');
+  const [category, setCategory] = useState('Electronics');
+  const [unit, setUnit] = useState('pcs');
+  const [minThreshold, setMinThreshold] = useState('');
+  // Action states
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  // Dropdown visibility
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showUnitDropdown, setShowUnitDropdown] = useState(false);
 
-  // Form states pre-filled with lookup product details
-  const [productName, setProductName] = useState(productInfo.name);
-  const [sku] = useState(productInfo.sku);
-  const [category] = useState(productInfo.category);
-  const [unit] = useState(productInfo.unit === 'pieces' ? 'pcs' : productInfo.unit);
-  const [minThreshold, setMinThreshold] = useState(parseInt(productInfo.minLevel, 10).toString());
+  // ADD — fetch product once on mount and pre-fill form fields
+  useEffect(() => {
+    if (!productId) return;
 
-  const handleSaveChanges = () => {
-    // Return back to product details screen after saving
-    navigation.goBack();
+    const fetchProduct = async () => {
+      try {
+        const snap = await db
+          .collection('products')
+          .doc(productId)
+          .get();
+
+        if (snap.exists) {
+          const data = snap.data() as Product;
+          setProduct({ id: snap.id, ...data });
+
+          // Pre-fill form with existing product data
+          setProductName(data.name);
+          setSku(data.sku);
+          setCategory(data.category);
+          setUnit(data.unit);
+          setMinThreshold(data.minStockThreshold.toString());
+        } else {
+          setError('Product not found');
+        }
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setPageLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [productId]);
+
+  const validateForm = (): boolean => {
+    if (!productName.trim()) {
+      Toast.show('Product name is required', Toast.LONG)
+      return false;
+    }
+    if (!minThreshold || isNaN(Number(minThreshold)) || Number(minThreshold) < 0) {
+      Toast.show('Please enter a valid minimum threshold', Toast.LONG)
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveChanges = async () => {
+    if (!validateForm()) return;
+
+    setIsSaving(true);
+
+    const result = await updateProduct(productId, {
+      name: productName.trim(),
+      category,
+      unit,
+      minStockThreshold: Number(minThreshold),
+    });
+
+    setIsSaving(false);
+
+    if (result.success) {
+      Toast.show('Product updated successfully', Toast.LONG)
+      navigation.goBack()
+    } else {
+      Toast.show(result.error || 'Failed to update product', Toast.LONG);
+    }
   };
 
   const handleDeleteProduct = () => {
-    // Navigate back to the home/productList screen after deletion
-    navigation.navigate(string.screens.productList);
-  };
+    // Show confirmation before deleting
+    Alert.alert(
+      'Delete Product',
+      `Are you sure you want to delete "${productName}"? This will also delete all transaction history.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsDeleting(true);
 
+            const result = await deleteProduct(productId);
+
+            setIsDeleting(false);
+
+            if (result.success) {
+              // Navigate to ProductList — goBack would go to detail of deleted product
+              Toast.show('Product deleted successfully', Toast.LONG)
+              navigation.navigate(string.screens.productList);
+            } else {
+              Toast.show('Failed to delete product', Toast.LONG)
+            }
+          },
+        },
+      ]
+    );
+  };
+  if (pageLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#534AB7" />
+        <Text style={styles.loadingText}>Loading product...</Text>
+      </View>
+    );
+  }
+
+  if (error || !product) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>Product not found</Text>
+        <Text style={styles.errorSub}>{error}</Text>
+      </View>
+    );
+  }
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView
@@ -130,12 +224,19 @@ const EditProductScreen = ({ navigation, route }: EditProductScreenProps) => {
             <Dropdown
               label={string.editProduct.categoryLabel}
               value={category}
-              onPress={() => { }}
+              options={CATEGORY_OPTIONS}
+              // onPress={() => setShowCategoryDropdown(true)}
+              onSelect={setCategory}
+
             />
             <Dropdown
               label={string.editProduct.unitLabel}
               value={unit}
-              onPress={() => { }}
+              options={UNIT_OPTIONS}
+
+              // onPress={() => setShowUnitDropdown(true)}
+              onSelect={setUnit}
+
             />
           </View>
 
@@ -157,16 +258,20 @@ const EditProductScreen = ({ navigation, route }: EditProductScreenProps) => {
           {/* Action Buttons */}
           <View style={styles.buttonContainer}>
             <Button
-              title={string.editProduct.saveChangesBtn}
+              title={isSaving ? 'Saving...' : string.editProduct.saveChangesBtn}
               onPress={handleSaveChanges}
+              disabled={isSaving || isDeleting}
             />
 
             <TouchableOpacity
-              style={styles.deleteButton}
+              style={[styles.deleteButton, isDeleting && { opacity: 0.6 }]}
               onPress={handleDeleteProduct}
               activeOpacity={0.7}
+              disabled={isDeleting || isSaving}
             >
-              <Text style={styles.deleteButtonText}>{string.editProduct.deleteProductBtn}</Text>
+              <Text style={styles.deleteButtonText}>
+                {isDeleting ? 'Deleting...' : string.editProduct.deleteProductBtn}
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
