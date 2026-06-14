@@ -90,6 +90,7 @@ export const stockIn = async (productId, quantity, note = '') => {
             if (!productSnap.exists) {
                 throw new Error('Product not found');
             }
+            console.log('ProductSnap_stockin', productSnap.data())
             const previousStock = productSnap.data().currentStock;
             const newStock = previousStock + quantity;
 

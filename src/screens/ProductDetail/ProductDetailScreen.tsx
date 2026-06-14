@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,106 +22,126 @@ import {
 import Input from '../../components/Input';
 import Button from '../../components/Button';
 import styles from './styles';
+import { db } from '../../config/firebase';
+import { getTransactionHistory, stockIn, stockOut } from '../../services/inventoryService';
+import Toast from 'react-native-simple-toast';
 
-interface ProductDetails {
+
+interface Product {
+  id: string;
   name: string;
   sku: string;
   category: string;
-  minLevel: string;
-  stock: number;
   unit: string;
+  currentStock: number;
+  minStockThreshold: number;
+  createdAt: any;
 }
 
-const PRODUCTS_DATA: Record<string, ProductDetails> = {
-  '1': {
-    name: 'Wireless Mouse',
-    sku: 'WM-001',
-    category: 'Electronics',
-    minLevel: '20 pcs',
-    stock: 148,
-    unit: 'pieces'
-  },
-  '2': {
-    name: 'USB-C Cables',
-    sku: 'UC-042',
-    category: 'Electronics',
-    minLevel: '10 pcs',
-    stock: 8,
-    unit: 'pieces'
-  },
-  '3': {
-    name: 'HDMI Adapter',
-    sku: 'HD-017',
-    category: 'Electronics',
-    minLevel: '5 pcs',
-    stock: 0,
-    unit: 'pieces'
-  },
-  '4': {
-    name: 'Notebook A5',
-    sku: 'NB-088',
-    category: 'Stationery',
-    minLevel: '50 pcs',
-    stock: 312,
-    unit: 'pieces'
-  }
+interface Transaction {
+  id: string;
+  type: 'stock-in' | 'stock-out';
+  quantity: number;
+  previousStock: number;
+  newStock: number;
+  note: string;
+  createdAt: any;
+}
+
+// ADD this helper above the component
+const formatTimestamp = (timestamp: any): string => {
+  if (!timestamp) return '—';
+
+  // Firestore serverTimestamp returns a Timestamp object
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `Today, ${date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  })}`;
+  return 'Yesterday';
 };
 
-interface HistoryItem {
-  id: string;
-  type: 'in' | 'out';
-  note: string;
-  quantity: number;
-  time: string;
-}
-
 const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) => {
-  // Retrieve productId parameter passed from routing, default to '1' (Wireless Mouse)
-  const productId = route.params?.productId || '1';
-  const productInfo = PRODUCTS_DATA[productId] || PRODUCTS_DATA['1'];
-
-  // Local state for stock and transaction history
-  const [currentStock, setCurrentStock] = useState(productInfo.stock);
-  const [history, setHistory] = useState<HistoryItem[]>([
-    { id: '1', type: 'in', note: 'Restock from supplier', quantity: 50, time: 'Today, 10:23 AM' },
-    { id: '2', type: 'out', note: 'Order #4821', quantity: 12, time: 'Today, 8:05 AM' },
-    { id: '3', type: 'in', note: 'Initial stock added', quantity: 110, time: 'Yesterday' }
-  ]);
+  const { productId } = route.params;
+  console.log('productId:', productId);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [history, setHistory] = useState<Transaction[]>([]);
+  const [productLoading, setProductLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal (Bottom Sheet) states
   const [modalVisible, setModalVisible] = useState(false);
   const [transactionType, setTransactionType] = useState<'in' | 'out'>('in');
   const [quantity, setQuantity] = useState('');
   const [note, setNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ADD this useEffect for real-time product updates
+  // When stock changes via transaction, this updates instantly
+  useEffect(() => {
+    if (!productId) return;
+
+    const unsubscribe = db
+      .collection('products')
+      .doc(productId)
+      .onSnapshot(
+        (snap) => {
+          if (snap.exists) {
+            setProduct({ id: snap.id, ...snap.data() } as Product);
+          } else {
+            setError('Product not found');
+          }
+          setProductLoading(false);
+        },
+        (err) => {
+          console.error('Product listener error:', err);
+          setError(err.message);
+          setProductLoading(false);
+        }
+      );
+
+    return () => unsubscribe();
+  }, [productId]);
+
+  // ADD this useEffect for transaction history
+  // Fetches subcollection ordered by newest first
+  useEffect(() => {
+    if (!productId) return;
+
+    const fetchHistory = async () => {
+      setHistoryLoading(true);
+      const result = await getTransactionHistory(productId);
+      if (result.success) {
+        setHistory(result.transactions as Transaction[]);
+      }
+      setHistoryLoading(false);
+    };
+
+    fetchHistory();
+  }, [productId]);
 
   // Determine stock color and status badge info
-  const getStockStatus = (stock: number, minLevelStr: string) => {
-    const minVal = parseInt(minLevelStr, 10) || 20;
-    if (stock === 0) {
-      return {
-        label: 'Out of stock',
-        bg: DANGER_BG,
-        text: DANGER_TEXT,
-        numberColor: DANGER_TEXT
-      };
+  const getStockStatus = (currentStock: number, minStockThreshold: number) => {
+    if (currentStock === 0) {
+      return { label: 'Out of stock', bg: DANGER_BG, text: DANGER_TEXT, numberColor: DANGER_TEXT };
     }
-    if (stock <= minVal) {
-      return {
-        label: 'Low stock',
-        bg: WARNING_BG,
-        text: WARNING_TEXT,
-        numberColor: WARNING_TEXT
-      };
+    if (currentStock <= minStockThreshold) {
+      return { label: 'Low stock', bg: WARNING_BG, text: WARNING_TEXT, numberColor: WARNING_TEXT };
     }
-    return {
-      label: 'In stock',
-      bg: SUCCESS_BG,
-      text: SUCCESS_TEXT,
-      numberColor: SUCCESS_TEXT
-    };
+    return { label: 'In stock', bg: SUCCESS_BG, text: SUCCESS_TEXT, numberColor: SUCCESS_TEXT };
   };
 
-  const statusInfo = getStockStatus(currentStock, productInfo.minLevel);
+  const statusInfo = product
+    ? getStockStatus(product.currentStock, product.minStockThreshold)
+    : getStockStatus(0, 0);
 
   const openTransactionModal = (type: 'in' | 'out') => {
     setTransactionType(type);
@@ -129,32 +150,49 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
     setModalVisible(true);
   };
 
-  const handleTransactionSubmit = () => {
+  const handleTransactionSubmit = async () => {
     const qtyNum = parseInt(quantity, 10);
     if (isNaN(qtyNum) || qtyNum <= 0) return;
 
-    // Calculate new stock
-    let newStock = currentStock;
-    if (transactionType === 'in') {
-      newStock += qtyNum;
+    setIsSubmitting(true);
+
+    const result = transactionType === 'in'
+      ? await stockIn(productId, qtyNum, note.trim())
+      : await stockOut(productId, qtyNum, note.trim());
+
+    setIsSubmitting(false);
+
+    if (result.success) {
+      // Refresh history after successful transaction
+      const historyResult = await getTransactionHistory(productId);
+      if (historyResult.success) {
+        setHistory(historyResult.transactions as Transaction[]);
+      }
+      setModalVisible(false);
+      setQuantity('');
+      setNote('');
     } else {
-      newStock = Math.max(0, currentStock - qtyNum);
+      // Show error — most likely insufficient stock
+      Toast.show(result.error || 'Something went wrong', Toast.LONG)
     }
-
-    // Add transaction to history
-    const newTransaction: HistoryItem = {
-      id: Date.now().toString(),
-      type: transactionType,
-      note: note.trim() || (transactionType === 'in' ? 'Manual stock in' : 'Manual stock out'),
-      quantity: qtyNum,
-      time: 'Just now'
-    };
-
-    setCurrentStock(newStock);
-    setHistory([newTransaction, ...history]);
-    setModalVisible(false);
   };
+  if (productLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#534AB7" />
+        <Text style={styles.loadingText}>Loading product...</Text>
+      </View>
+    );
+  }
 
+  if (error || !product) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>Product not found</Text>
+        <Text style={styles.errorSub}>{error}</Text>
+      </View>
+    );
+  }
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -170,7 +208,7 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
               <View style={styles.chevron} />
             </TouchableOpacity>
             <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
-              {productInfo.name}
+              {product.name}
             </Text>
           </View>
           <TouchableOpacity
@@ -187,9 +225,9 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
         <View style={styles.stockCard}>
           <Text style={styles.stockCardLabel}>Current stock</Text>
           <Text style={[styles.stockCardNumber, { color: statusInfo.numberColor }]}>
-            {currentStock}
+            {product.currentStock}
           </Text>
-          <Text style={styles.stockCardUnit}>{productInfo.unit}</Text>
+          <Text style={styles.stockCardUnit}>{product.unit}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusInfo.bg }]}>
             <View style={[styles.statusDot, { backgroundColor: statusInfo.text }]} />
             <Text style={[styles.statusText, { color: statusInfo.text }]}>{statusInfo.label}</Text>
@@ -200,15 +238,15 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
         <View style={styles.metricsContainer}>
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>SKU</Text>
-            <Text style={styles.metricValue} numberOfLines={1}>{productInfo.sku}</Text>
+            <Text style={styles.metricValue} numberOfLines={1}>{product.sku}</Text>
           </View>
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>Category</Text>
-            <Text style={styles.metricValue} numberOfLines={1}>{productInfo.category}</Text>
+            <Text style={styles.metricValue} numberOfLines={1}>{product.category}</Text>
           </View>
           <View style={styles.metricCard}>
             <Text style={styles.metricLabel}>Min. level</Text>
-            <Text style={styles.metricValue} numberOfLines={1}>{productInfo.minLevel}</Text>
+            <Text style={styles.metricValue} numberOfLines={1}>{`${product.minStockThreshold} ${product.unit}`}</Text>
           </View>
         </View>
 
@@ -236,39 +274,54 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
         {/* Movement History Section */}
         <Text style={styles.historyTitle}>Movement history</Text>
         <View style={styles.historyList}>
-          {history.map((item, index) => {
-            const isIn = item.type === 'in';
-            return (
-              <View key={item.id}>
-                {index > 0 && <View style={styles.historyDivider} />}
-                <View style={styles.historyItem}>
-                  <View style={styles.historyLeft}>
-                    <View style={[
-                      styles.historyIconContainer,
-                      isIn ? styles.historyIconIn : styles.historyIconOut
-                    ]}>
-                      <Text style={[styles.historyIconText, isIn ? styles.stockInText : styles.stockOutText]}>
-                        {isIn ? '↓' : '↑'}
+          {historyLoading ? (
+            <ActivityIndicator size="small" color="#534AB7" />
+          ) : history.length === 0 ? (
+            <Text style={styles.emptyHistory}>No transactions yet</Text>
+          ) : (
+            history.map((item, index) => {
+              const isIn = item.type === 'stock-in';   // ✅ matches Firestore value
+              return (
+                <View key={item.id}>
+                  {index > 0 && <View style={styles.historyDivider} />}
+                  <View style={styles.historyItem}>
+                    <View style={styles.historyLeft}>
+                      <View style={[
+                        styles.historyIconContainer,
+                        isIn ? styles.historyIconIn : styles.historyIconOut
+                      ]}>
+                        <Text style={[
+                          styles.historyIconText,
+                          isIn ? styles.stockInText : styles.stockOutText
+                        ]}>
+                          {isIn ? '↓' : '↑'}
+                        </Text>
+                      </View>
+                      <View style={styles.historyInfo}>
+                        <Text style={styles.historyType}>
+                          {isIn ? 'Stock in' : 'Stock out'}
+                        </Text>
+                        <Text style={styles.historyNote} numberOfLines={1}>
+                          {item.note || '—'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.historyRight}>
+                      <Text style={[
+                        styles.historyQuantity,
+                        isIn ? styles.historyQuantityIn : styles.historyQuantityOut
+                      ]}>
+                        {isIn ? '+' : '-'}{item.quantity}
+                      </Text>
+                      <Text style={styles.historyTime}>
+                        {formatTimestamp(item.createdAt)}   {/* ✅ real timestamp */}
                       </Text>
                     </View>
-                    <View style={styles.historyInfo}>
-                      <Text style={styles.historyType}>{isIn ? 'Stock in' : 'Stock out'}</Text>
-                      <Text style={styles.historyNote} numberOfLines={1}>{item.note}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.historyRight}>
-                    <Text style={[
-                      styles.historyQuantity,
-                      isIn ? styles.historyQuantityIn : styles.historyQuantityOut
-                    ]}>
-                      {isIn ? '+' : '-'}{item.quantity}
-                    </Text>
-                    <Text style={styles.historyTime}>{item.time}</Text>
                   </View>
                 </View>
-              </View>
-            );
-          })}
+              );
+            })
+          )}
         </View>
       </ScrollView>
 
@@ -328,9 +381,14 @@ const ProductDetailScreen = ({ navigation, route }: ProductDetailScreenProps) =>
 
               <View style={styles.submitButtonWrapper}>
                 <Button
-                  title="Confirm"
+                  title={isSubmitting ? 'Saving...' : 'Confirm'}
                   onPress={handleTransactionSubmit}
-                  disabled={!quantity || isNaN(parseInt(quantity, 10)) || parseInt(quantity, 10) <= 0}
+                  disabled={
+                    isSubmitting ||
+                    !quantity ||
+                    isNaN(parseInt(quantity, 10)) ||
+                    parseInt(quantity, 10) <= 0
+                  }
                 />
               </View>
             </View>
