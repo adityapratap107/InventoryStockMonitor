@@ -26,7 +26,6 @@ export const useInventory = () => {
                         id: doc.id,         // Firestore document ID
                         ...doc.data(),      // All fields: name, sku, currentStock, etc.
                     }));
-
                     setProducts(productList);
                     setLoading(false);
                     setError(null);
@@ -85,13 +84,9 @@ export const useFilteredProducts = (activeFilter) => {
         // "all" filter is handled by useInventory hook directly
         // Only run Firestore queries for low-stock and out-of-stock
         if (activeFilter === 1) return;
-
         setLoading(true);
 
         let query;
-
-
-
         if (activeFilter === 2) {
             // Note: Firestore cannot compare two fields directly
             // So we fetch all and filter client-side for low stock

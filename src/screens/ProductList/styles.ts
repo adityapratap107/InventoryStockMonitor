@@ -186,4 +186,27 @@ export default StyleSheet.create({
     fontWeight: '400',
     marginTop: -2,
   },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F7FF',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B6B8A',
+  },
+  errorText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#A32D2D',
+  },
+  errorSub: {
+    fontSize: 12,
+    color: '#6B6B8A',
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
 });

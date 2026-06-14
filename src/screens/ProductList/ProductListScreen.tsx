@@ -4,7 +4,8 @@ import {
   Text,
   TouchableOpacity,
   View,
-  FlatList
+  FlatList,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -18,50 +19,18 @@ import {
 import type { ProductListScreenProps } from '../../navigation/types';
 import styles from './styles';
 import { string } from '../../constants/strings';
+import { useInventory } from '../../hooks/useInventory'
 
 interface Product {
   id: string;
   name: string;
   sku: string;
-  quantity: number;
-  status: 'In stock' | 'Low stock' | 'Out of stock';
+  currentStock: number;
+  minStockThreshold: number;
   category: string;
+  unit: string;
+  createdAt: any;
 }
-
-const mockProducts: Product[] = [
-  {
-    id: '1',
-    name: 'Wireless Mouse',
-    sku: 'WM-001',
-    quantity: 148,
-    status: 'In stock',
-    category: 'Electronics',
-  },
-  {
-    id: '2',
-    name: 'USB-C Cables',
-    sku: 'UC-042',
-    quantity: 8,
-    status: 'Low stock',
-    category: 'Electronics',
-  },
-  {
-    id: '3',
-    name: 'HDMI Adapter',
-    sku: 'HD-017',
-    quantity: 0,
-    status: 'Out of stock',
-    category: 'Electronics',
-  },
-  {
-    id: '4',
-    name: 'Notebook A5',
-    sku: 'NB-088',
-    quantity: 312,
-    status: 'In stock',
-    category: 'Stationery',
-  },
-];
 
 enum ProductFilter {
   All = 1,
@@ -80,18 +49,45 @@ const FILTER_PILLS: FilterItem[] = [
   { id: ProductFilter.OutOfStock, label: 'Out of stock' },
 ];
 
+type StockStatus = 'In stock' | 'Low stock' | 'Out of stock';
+
 const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
   const [selectedFilter, setSelectedFilter] = useState<ProductFilter>(ProductFilter.All);
+  const {
+    products,
+    loading,
+    error,
+    inStockCount,
+    lowStockCount,
+    outOfStockCount,
+  } = useInventory() as {
+    products: Product[];
+    loading: boolean;
+    error: any;
+    inStockCount: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+  };
+
+  const getStockStatus = (
+    currentStock: number,
+    minStockThreshold: number
+  ): StockStatus => {
+    if (currentStock === 0) return 'Out of stock';
+    if (currentStock <= minStockThreshold) return 'Low stock';
+    return 'In stock';
+  };
 
   // Filter products based on selected pill ID
-  const filteredProducts = mockProducts.filter(product => {
+  const filteredProducts = products.filter(product => {
     if (selectedFilter === ProductFilter.All) return true;
-    if (selectedFilter === ProductFilter.LowStock) return product.status === 'Low stock';
-    if (selectedFilter === ProductFilter.OutOfStock) return product.status === 'Out of stock';
+    const status = getStockStatus(product.currentStock, product.minStockThreshold);
+    if (selectedFilter === ProductFilter.LowStock) return status === 'Low stock';
+    if (selectedFilter === ProductFilter.OutOfStock) return status === 'Out of stock';
     return false;
   });
 
-  const getStatusColors = (status: Product['status']) => {
+  const getStatusColors = (status: StockStatus) => {
     switch (status) {
       case 'In stock':
         return { bg: SUCCESS_BG, text: SUCCESS_TEXT, border: 'transparent' };
@@ -101,10 +97,10 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
         return { bg: DANGER_BG, text: DANGER_TEXT, border: DANGER_TEXT };
     }
   };
-
   const renderProductItem = ({ item }: { item: Product }) => {
-    const colors = getStatusColors(item.status);
-    const hasStatusBorder = item.status !== 'In stock';
+    const status = getStockStatus(item.currentStock, item.minStockThreshold);
+    const colors = getStatusColors(status);
+    const hasStatusBorder = status !== 'In stock';
 
     return (
       <TouchableOpacity
@@ -118,7 +114,7 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
         <View style={styles.cardHeader}>
           <Text style={styles.productName}>{item.name}</Text>
           <View style={[styles.statusTag, { backgroundColor: colors.bg }]}>
-            <Text style={[styles.statusText, { color: colors.text }]}>{item.status}</Text>
+            <Text style={[styles.statusText, { color: colors.text }]}>{status}</Text>
           </View>
         </View>
 
@@ -126,9 +122,12 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
 
         <View style={styles.cardFooter}>
           <Text style={styles.quantityText}>
-            <Text style={[styles.quantityNumber, item.status === 'Out of stock' && { color: DANGER_TEXT }]}>
-              {item.quantity}
-            </Text> pcs
+            <Text style={[
+              styles.quantityNumber,
+              status === 'Out of stock' && { color: DANGER_TEXT }
+            ]}>
+              {item.currentStock}        {/* ✅ correct field */}
+            </Text> {item.unit}          {/* ✅ dynamic unit */}
           </Text>
           <View style={styles.categoryBadge}>
             <Text style={styles.categoryText}>{item.category}</Text>
@@ -137,26 +136,41 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
       </TouchableOpacity>
     );
   };
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#534AB7" />
+        <Text style={styles.loadingText}>Loading inventory...</Text>
+      </View>
+    );
+  }
 
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>Something went wrong</Text>
+        <Text style={styles.errorSub}>{error}</Text>
+      </View>
+    );
+  }
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.headerSection}>
         {/* Screen Title & Subtitle */}
         <Text style={styles.title}>Inventory</Text>
-        <Text style={styles.subtitle}>12 products total</Text>
-
+        <Text style={styles.subtitle}>{products.length} products total</Text>
         {/* Stats Cards Section */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: SUCCESS_TEXT }]}>9</Text>
+            <Text style={[styles.statNumber, { color: SUCCESS_TEXT }]}>{inStockCount}</Text>
             <Text style={styles.statLabel}>In stock</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: WARNING_TEXT }]}>2</Text>
+            <Text style={[styles.statNumber, { color: WARNING_TEXT }]}>{lowStockCount}</Text>
             <Text style={styles.statLabel}>Low stock</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: DANGER_TEXT }]}>1</Text>
+            <Text style={[styles.statNumber, { color: DANGER_TEXT }]}>{outOfStockCount}</Text>
             <Text style={styles.statLabel}>Out of stock</Text>
           </View>
         </View>
