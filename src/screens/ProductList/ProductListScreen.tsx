@@ -136,6 +136,35 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
       </TouchableOpacity>
     );
   };
+  const renderEmptyState = () => {
+    let emoji = '📦';
+    let title = 'No Products';
+    let subtitle = 'Your inventory is currently empty.';
+
+    if (selectedFilter === ProductFilter.LowStock) {
+      emoji = '⚠️';
+      title = 'All Good!';
+      subtitle = 'No products are currently low on stock.';
+    } else if (selectedFilter === ProductFilter.OutOfStock) {
+      emoji = '🎉';
+      title = 'Fully Stocked!';
+      subtitle = 'No products are currently out of stock.';
+    } else {
+      emoji = '📦';
+      title = 'No Products';
+      subtitle = 'Your inventory is empty. Add a product to get started.';
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconContainer}>
+          <Text style={styles.emptyEmoji}>{emoji}</Text>
+        </View>
+        <Text style={styles.emptyTitle}>{title}</Text>
+        <Text style={styles.emptySubtitle}>{subtitle}</Text>
+      </View>
+    );
+  };
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -207,6 +236,7 @@ const ProductListScreen = ({ navigation }: ProductListScreenProps) => {
         keyExtractor={(item) => item.id}
         renderItem={renderProductItem}
         contentContainerStyle={styles.listContent}
+        ListEmptyComponent={renderEmptyState}
       />
 
       {/* Floating Action Button (FAB) */}
