@@ -7,7 +7,7 @@ import {
   View,
   KeyboardTypeOptions
 } from 'react-native';
-import { PRIMARY, BORDER, TEXT_PRIMARY, TEXT_SECONDARY } from '../constants/colors';
+import { PRIMARY, BORDER, TEXT_PRIMARY, TEXT_SECONDARY, DANGER_TEXT } from '../constants/colors';
 
 interface InputProps {
   label: string;
@@ -17,6 +17,7 @@ interface InputProps {
   placeholder?: string;
   keyboardType?: KeyboardTypeOptions;
   helperText?: string;
+  errorText?: string;
   editable?: boolean;
 }
 
@@ -28,6 +29,7 @@ const Input = ({
   placeholder,
   keyboardType,
   helperText,
+  errorText,
   editable = true,
 }: InputProps) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -42,6 +44,7 @@ const Input = ({
         style={[
           styles.input,
           isFocused && editable ? styles.inputFocused : styles.inputUnfocused,
+          errorText ? styles.inputError : null,
           !editable && styles.inputDisabled
         ]}
         value={value}
@@ -53,7 +56,11 @@ const Input = ({
         onBlur={() => editable && setIsFocused(false)}
         editable={editable}
       />
-      {helperText && <Text style={styles.helperText}>{helperText}</Text>}
+      {errorText ? (
+        <Text style={styles.errorText}>{errorText}</Text>
+      ) : (
+        helperText && <Text style={styles.helperText}>{helperText}</Text>
+      )}
     </View>
   );
 };
@@ -92,10 +99,19 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
     borderColor: BORDER,
   },
+  inputError: {
+    borderColor: DANGER_TEXT,
+  },
   helperText: {
     fontSize: 12,
     color: TEXT_SECONDARY,
     marginTop: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: DANGER_TEXT,
+    marginTop: 4,
+    fontWeight: '500',
   },
 });
 

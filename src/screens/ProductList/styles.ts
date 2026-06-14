@@ -2,6 +2,7 @@
 import { StyleSheet } from 'react-native';
 import {
   PRIMARY,
+  PRIMARY_LIGHT,
   BACKGROUND,
   CARD_BG,
   TEXT_PRIMARY,
@@ -15,6 +16,7 @@ export default StyleSheet.create({
     backgroundColor: BACKGROUND,
   },
   listContent: {
+    flexGrow: 1,
     paddingHorizontal: 16,
     paddingBottom: 100, // Make room for the floating FAB
   },
@@ -185,5 +187,60 @@ export default StyleSheet.create({
     fontSize: 28,
     fontWeight: '400',
     marginTop: -2,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F7FF',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B6B8A',
+  },
+  errorText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#A32D2D',
+  },
+  errorSub: {
+    fontSize: 12,
+    color: '#6B6B8A',
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: PRIMARY_LIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyEmoji: {
+    fontSize: 36,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: TEXT_PRIMARY,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: TEXT_SECONDARY,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
